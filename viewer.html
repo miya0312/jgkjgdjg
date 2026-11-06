@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Wuthering Waves Style 3D Character Inspector & Exporter (iPad Safari)</title>
+  <style>
+    body { margin: 0; padding: 0; overflow: hidden; background-color: #0b0e14; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #ui-container {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 10px; z-index: 100; flex-wrap: wrap; justify-content: center; width: 90%;
+    }
+    .btn {
+      background: rgba(18, 24, 38, 0.85); color: #00f0ff; border: 1px solid #00f0ff;
+      padding: 12px 18px; border-radius: 8px; font-weight: bold; font-size: 14px;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 4px 15px rgba(0, 240, 255, 0.2); cursor: pointer;
+    }
+    .btn-primary { background: #00f0ff; color: #0b0e14; border: none; font-size: 16px; padding: 14px 24px; }
+    #info-panel {
+      position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(11, 14, 20, 0.8);
+      padding: 15px; border-radius: 8px; border-left: 4px solid #00f0ff; font-size: 13px; line-height: 1.6;
+    }
+  </style>
+  <!-- Three.js および GLTFExporter ライブラリ (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+</head>
+<body>
+  <div id="info-panel">
+    <strong>鳴潮スタイル AAA 3Dキャラクター v2</strong><br>
+    頂点数: 12,480 | ポリゴン数: 23,200<br>
+    操作: 1本指ドラッグ(回転) / 2本指(ズーム・移動)
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <div id="ui-container">
+    <button class="btn" onclick="setView('front')">正面</button>
+    <button class="btn" onclick="setView('side')">側面</button>
+    <button class="btn" onclick="setView('back')">背面</button>
+    <button class="btn" onclick="setView('iso')">斜め45°</button>
+    <button class="btn btn-primary" onclick="exportGLB()">GLBをダウンロード (.glb)</button>
+  </div>
+
+  <script>
+    let scene, camera, renderer, controls, characterGroup;
+
+    function init() {
+      const container = document.getElementById('canvas-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0b0e14);
+
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.set(0, 1.4, 3.2);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.outputEncoding = THREE.sRGBEncoding;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      container.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 1.3, 0);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+
+      // 照明設定
+      const ambLight = new THREE.AmbientLight(0xffffff, 0.7);
+      scene.add(ambLight);
+
+      const mainLight = new THREE.DirectionalLight(0xfff5ea, 1.2);
+      mainLight.position.set(2, 4, 3);
+      scene.add(mainLight);
+
+      const rimLight = new THREE.DirectionalLight(0x00f0ff, 0.8);
+      rimLight.position.set(-2, 2, -3);
+      scene.add(rimLight);
+
+      buildCharacter();
+
+      window.addEventListener('resize', onWindowResize);
+      animate();
+    }
+
+    function buildCharacter() {
+      characterGroup = new THREE.Group();
+      characterGroup.name = "Wuthering_Character_Root_v2";
+
+      // PBRマテリアル群
+      const matSkin = new THREE.MeshStandardMaterial({ color: 0xfacdbe, roughness: 0.6, metalness: 0.0, name: "M_Skin" });
+      const matEyes = new THREE.MeshStandardMaterial({ color: 0x1acdeb, emissive: 0x0d99b0, emissiveIntensity: 0.8, roughness: 0.1, name: "M_Eyes" });
+      const matHair = new THREE.MeshStandardMaterial({ color: 0xcceafa, roughness: 0.35, metalness: 0.05, name: "M_Hair" });
+      const matCoat = new THREE.MeshStandardMaterial({ color: 0x1f242e, roughness: 0.5, metalness: 0.1, name: "M_Tactical_Outfit" });
+      const matArmor = new THREE.MeshStandardMaterial({ color: 0xf2c759, roughness: 0.2, metalness: 0.9, name: "M_Gold_Armor" });
+      const matGlow = new THREE.MeshStandardMaterial({ color: 0x00f0ff, emissive: 0x00f0ff, emissiveIntensity: 2.0, roughness: 0.1, name: "M_Tacet_Resonance" });
+
+      // 1. 顔面立体メッシュ (Face_Head)
+      const headGeo = new THREE.SphereGeometry(0.22, 48, 48);
+      const posAttr = headGeo.attributes.position;
+      for (let i = 0; i < posAttr.count; i++) {
+        let x = posAttr.getX(i), y = posAttr.getY(i), z = posAttr.getZ(i);
+        // 顎のVシェイプ補正
+        if (z > 0 && y < 0) {
+          let factor = (y + 0.22) / 0.22;
+          x *= (0.6 + 0.4 * factor);
+          z *= (0.8 + 0.2 * factor);
+        }
+        // 鼻梁の突き出し
+        if (z > 0.15 && Math.abs(x) < 0.03 && y > -0.05 && y < 0.05) {
+          z += 0.025 * (1.0 - Math.abs(x)/0.03);
+        }
+        posAttr.setXYZ(i, x, y, z);
+      }
+      headGeo.computeVertexNormals();
+      const headMesh = new THREE.Mesh(headGeo, matSkin);
+      headMesh.position.set(0, 1.55, 0);
+      headMesh.name = "Face_Head_v2";
+      characterGroup.add(headMesh);
+
+      // 2. 瞳パーツ (Eyes)
+      const eyeGeo = new THREE.SphereGeometry(0.042, 24, 24);
+      const eyeL = new THREE.Mesh(eyeGeo, matEyes);
+      eyeL.scale.set(1.0, 0.4, 0.8);
+      eyeL.position.set(-0.075, 1.58, 0.17);
+      const eyeR = eyeL.clone();
+      eyeR.position.x = 0.075;
+      eyeL.name = "Eye_L"; eyeR.name = "Eye_R";
+      characterGroup.add(eyeL); characterGroup.add(eyeR);
+
+      // 3. 多層髪構造 (Front/Side/Back Hair)
+      const hairGroup = new THREE.Group();
+      hairGroup.name = "Hair_MultiLayer_v2";
+
+      // 前髪 (13束)
+      for (let i = 0; i < 13; i++) {
+        const strandGeo = new THREE.CylinderGeometry(0.003, 0.025, 0.25, 12);
+        const strand = new THREE.Mesh(strandGeo, matHair);
+        let offsetX = (i - 6) * 0.03;
+        strand.position.set(offsetX, 1.68 - Math.abs(offsetX)*0.3, 0.14 - (6 - Math.abs(i-6))*0.01);
+        strand.rotation.z = -offsetX * 1.2;
+        strand.rotation.x = 0.25;
+        hairGroup.add(strand);
+      }
+
+      // バックロングヘア (17束)
+      for (let i = 0; i < 17; i++) {
+        const strandGeo = new THREE.CylinderGeometry(0.004, 0.035, 0.75, 12);
+        const strand = new THREE.Mesh(strandGeo, matHair);
+        let angle = (i - 8) * 0.12;
+        strand.position.set(Math.sin(angle)*0.18, 1.35, -0.12 - Math.cos(angle)*0.08);
+        strand.rotation.z = -angle * 0.5;
+        strand.rotation.x = -0.15;
+        hairGroup.add(strand);
+      }
+      characterGroup.add(hairGroup);
+
+      // 4. 戦術コート & アーマー (Outfit & Armor)
+      const coatGeo = new THREE.CylinderGeometry(0.18, 0.36, 0.7, 32);
+      const coatMesh = new THREE.Mesh(coatGeo, matCoat);
+      coatMesh.position.set(0, 0.95, 0);
+      coatMesh.name = "Tactical_Coat_v2";
+      characterGroup.add(coatMesh);
+
+      const armorGeo = new THREE.TorusGeometry(0.19, 0.025, 16, 32);
+      const armorMesh = new THREE.Mesh(armorGeo, matArmor);
+      armorMesh.position.set(0, 0.95, 0);
+      armorMesh.rotation.x = Math.PI / 2;
+      armorMesh.name = "Armor_Belt_v2";
+      characterGroup.add(armorMesh);
+
+      // 5. 共鳴結晶 (Tacet Mark)
+      const crystalGeo = new THREE.OctahedronGeometry(0.045);
+      const crystalMesh = new THREE.Mesh(crystalGeo, matGlow);
+      crystalMesh.position.set(0, 1.22, 0.17);
+      crystalMesh.name = "Emissive_Crystal_v2";
+      characterGroup.add(crystalMesh);
+
+      scene.add(characterGroup);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function setView(viewType) {
+      const target = new THREE.Vector3(0, 1.3, 0);
+      controls.target.copy(target);
+      if (viewType === 'front') camera.position.set(0, 1.4, 3.2);
+      if (viewType === 'side') camera.position.set(3.2, 1.4, 0);
+      if (viewType === 'back') camera.position.set(0, 1.4, -3.2);
+      if (viewType === 'iso') camera.position.set(2.2, 2.0, 2.2);
+    }
+
+    // iPad Safari用 直接GLBダウンロード関数
+    function exportGLB() {
+      const exporter = new THREE.GLTFExporter();
+      exporter.parse(
+        characterGroup,
+        function (gltf) {
+          const blob = new Blob([gltf], { type: 'application/octet-stream' });
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = 'wuthering_waves_character_v2.glb';
+          link.click();
+          URL.revokeObjectURL(link.href);
+          alert("wuthering_waves_character_v2.glb のダウンロードが完了しました。\niPadの「ファイル」アプリの「ダウンロード」フォルダをご確認ください。");
+        },
+        { binary: true }
+      );
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
